@@ -75,17 +75,6 @@ fn getRelativePathAbs fullPath rootPath =
     else undefined
 )
 
-fn timestampString =
-(
-    /* localTime is a string in many Max versions; normalize to safe filename text */
-    local t = localTime as string
-    t = substituteString t "/" "-"
-    t = substituteString t ":" "-"
-    t = substituteString t " " "_"
-    t = substituteString t "," ""
-    t
-)
-
 fn makeBackupSourceToRoot srcFile rootDir backupRoot =
 (
     local rel = getRelativePathAbs srcFile rootDir
@@ -96,8 +85,7 @@ fn makeBackupSourceToRoot srcFile rootDir backupRoot =
     )
 
     local relDir = getFilenamePath rel
-    local baseName = getFilenameFile rel
-    local ext = getFilenameType rel
+    local relFileName = getFilenameFile rel + getFilenameType rel
 
     local backupFolder = backupRoot + "\\" + relDir
     if (ensureDir backupRoot) == false then
@@ -115,7 +103,13 @@ fn makeBackupSourceToRoot srcFile rootDir backupRoot =
         )
     )
 
-    local backupFile = backupFolder + baseName + "_bak_" + (timestampString()) + ext
+    local backupFile = backupFolder + relFileName
+    if doesFileExist backupFile do
+    (
+        logWarn ("Backup file already exists and will be overwritten: " + backupFile)
+        deleteFile backupFile
+    )
+
     local copyOk = copyFile srcFile backupFile
     if copyOk then backupFile else undefined
 )
@@ -189,10 +183,32 @@ fn hasSinkRootAncestor node =
     false
 )
 
+fn collectAllSceneNodes =
+(
+    local allNodes = #()
+    local queue = #()
+
+    for topNode in rootNode.children do append queue topNode
+
+    local idx = 1
+    while idx <= queue.count do
+    (
+        local n = queue[idx]
+        idx += 1
+        append allNodes n
+
+        for c in n.children do append queue c
+    )
+
+    allNodes
+)
+
 fn collectSinkRootNodes =
 (
     local roots = #()
-    for n in objects do
+    local allNodes = collectAllSceneNodes()
+
+    for n in allNodes do
     (
         if isSinkRootNode n and (not hasSinkRootAncestor n) then append roots n
     )
