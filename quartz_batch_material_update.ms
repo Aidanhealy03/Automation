@@ -122,6 +122,13 @@ fn getFinishTokenFromFilePath filePath =
     if parts.count >= 3 then (toUpper parts[3]) else undefined
 )
 
+fn getSinkPrefixFromFilePath filePath =
+(
+    local nameOnly = getFilenameFile filePath
+    local parts = filterString nameOnly "-"
+    if parts.count >= 1 then (toUpper parts[1]) else undefined
+)
+
 fn materialNameForToken token =
 (
     if token == undefined then return undefined
@@ -166,18 +173,19 @@ fn nodeNameStartsWithAny nodeName prefixes =
     false
 )
 
-fn isSinkRootNode node =
+fn isSinkRootNode node sinkPrefix =
 (
     if node == undefined then return false
-    nodeNameStartsWithAny node.name #("QARWS", "COL", "QBS")
+    if sinkPrefix == undefined then return false
+    nodeNameStartsWithAny node.name #(sinkPrefix, "COL", "QBS")
 )
 
-fn hasSinkRootAncestor node =
+fn hasSinkRootAncestor node sinkPrefix =
 (
     local p = node.parent
     while p != undefined do
     (
-        if isSinkRootNode p then return true
+        if isSinkRootNode p sinkPrefix then return true
         p = p.parent
     )
     false
@@ -203,14 +211,14 @@ fn collectAllSceneNodes =
     allNodes
 )
 
-fn collectSinkRootNodes =
+fn collectSinkRootNodes sinkPrefix =
 (
     local roots = #()
     local allNodes = collectAllSceneNodes()
 
     for n in allNodes do
     (
-        if isSinkRootNode n and (not hasSinkRootAncestor n) then append roots n
+        if isSinkRootNode n sinkPrefix and (not hasSinkRootAncestor n sinkPrefix) then append roots n
     )
     roots
 )
@@ -249,10 +257,104 @@ fn assignMaterialRecursive node newMat stats =
     assigned
 )
 
+fn hasPrefixAncestor node prefixes =
+(
+    local p = node.parent
+    while p != undefined do
+    (
+        if nodeNameStartsWithAny p.name prefixes then return true
+        p = p.parent
+    )
+    false
+)
+
+fn collectRootNodesByPrefix prefixes =
+(
+    local roots = #()
+    local allNodes = collectAllSceneNodes()
+
+    for n in allNodes do
+    (
+        if (nodeNameStartsWithAny n.name prefixes) and (not hasPrefixAncestor n prefixes) then append roots n
+    )
+    roots
+)
+
+fn ensureBoxUvwOnNode node boxSize stats label =
+(
+    if node == undefined then return false
+
+    local handled = true
+    try
+    (
+        local uvMod = undefined
+        if isProperty node #modifiers then
+        (
+            for m in node.modifiers where (classOf m == UVWMap) do
+            (
+                uvMod = m
+                exit
+            )
+
+            if uvMod == undefined then
+            (
+                uvMod = UVWMap()
+                addModifier node uvMod
+            )
+
+            uvMod.maptype = 4 -- Box
+            uvMod.length = boxSize
+            uvMod.width = boxSize
+            uvMod.height = boxSize
+            stats[1] += 1
+        )
+        else
+        (
+            stats[3] += 1
+        )
+    )
+    catch
+    (
+        handled = false
+        stats[2] += 1
+        logWarn ("Failed UVW Box setup on " + label + " node: " + node.name)
+    )
+
+    for c in node.children do ensureBoxUvwOnNode c boxSize stats label
+    handled
+)
+
+fn applyDrainAndColanderUvw =
+(
+    local colRoots = collectRootNodesByPrefix #("COL")
+    local drainRoots = collectRootNodesByPrefix #("QBS")
+
+    local colStats = #(0, 0, 0) -- #(updated, errors, skippedNoModifiers)
+    local drainStats = #(0, 0, 0)
+
+    for n in colRoots do ensureBoxUvwOnNode n 6.0 colStats "colander"
+    for n in drainRoots do ensureBoxUvwOnNode n 4.0 drainStats "drain"
+
+    #(
+        colRoots.count,
+        drainRoots.count,
+        colStats,
+        drainStats
+    )
+)
+
 /* ------------------------------ Processing ----------------------------- */
 fn processMaxFile filePath matLib =
 (
     local result = #("failed", 0, 0, "")
+    local sinkPrefix = getSinkPrefixFromFilePath filePath
+    if sinkPrefix == undefined then
+    (
+        result[1] = "skipped"
+        result[4] = "Missing sink prefix (expected 1st '-' token)."
+        return result
+    )
+
     local finishToken = getFinishTokenFromFilePath filePath
     if finishToken == undefined then
     (
@@ -303,17 +405,23 @@ fn processMaxFile filePath matLib =
         local replacementMat = copy sourceMat
         replacementMat.name = sourceMat.name
 
-        local roots = collectSinkRootNodes()
+        local roots = collectSinkRootNodes sinkPrefix
         if roots.count == 0 then
         (
             result[1] = "skipped"
-            result[4] = "No sink root nodes found (QARWS/COL/QBS)."
+            result[4] = "No sink root nodes found (" + sinkPrefix + "/COL/QBS)."
             resetMaxFile #noPrompt
             return result
         )
 
         local stats = #(0, 0, 0) -- #(assignedCount, assignmentErrors, protectedSkippedCount)
         for r in roots do assignMaterialRecursive r replacementMat stats
+
+        local uvwData = applyDrainAndColanderUvw()
+        local colRootCount = uvwData[1]
+        local drainRootCount = uvwData[2]
+        local colStats = uvwData[3]
+        local drainStats = uvwData[4]
 
         local saved = saveMaxFile filePath quiet:true
         if not saved then
@@ -327,7 +435,12 @@ fn processMaxFile filePath matLib =
         result[1] = "success"
         result[2] = stats[1]
         result[3] = stats[2]
-        result[4] = "Token=" + finishToken + ", Material=" + matName + ", Roots=" + (roots.count as string) + ", ProtectedSkipped=" + (stats[3] as string)
+        local uvSummary =
+            ", ColRoots=" + (colRootCount as string) +
+            ", DrainRoots=" + (drainRootCount as string) +
+            ", ColUVW=" + (colStats[1] as string) + "/Err=" + (colStats[2] as string) + "/Skip=" + (colStats[3] as string) +
+            ", DrainUVW=" + (drainStats[1] as string) + "/Err=" + (drainStats[2] as string) + "/Skip=" + (drainStats[3] as string)
+        result[4] = "SinkPrefix=" + sinkPrefix + ", Token=" + finishToken + ", Material=" + matName + ", Roots=" + (roots.count as string) + ", ProtectedSkipped=" + (stats[3] as string) + uvSummary
 
         resetMaxFile #noPrompt
         result
