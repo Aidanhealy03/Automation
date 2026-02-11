@@ -59,7 +59,7 @@ fn collectMaxFilesRecursive rootPath =
 
 fn sortStringArray arr =
 (
-    qsort arr (fn a b = (toLower a) < (toLower b))
+    sort arr
     arr
 )
 
