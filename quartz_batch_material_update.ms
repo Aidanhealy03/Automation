@@ -77,13 +77,13 @@ fn getRelativePathAbs fullPath rootPath =
 
 fn timestampString =
 (
-    local t = localTime
-    (formattedPrint t.year format:"04d") +
-    (formattedPrint t.month format:"02d") +
-    (formattedPrint t.day format:"02d") + "_" +
-    (formattedPrint t.hour format:"02d") +
-    (formattedPrint t.minute format:"02d") +
-    (formattedPrint t.second format:"02d")
+    /* localTime is a string in many Max versions; normalize to safe filename text */
+    local t = localTime as string
+    t = substituteString t "/" "-"
+    t = substituteString t ":" "-"
+    t = substituteString t " " "_"
+    t = substituteString t "," ""
+    t
 )
 
 fn makeBackupSourceToRoot srcFile rootDir backupRoot =
