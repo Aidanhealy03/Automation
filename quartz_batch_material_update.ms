@@ -37,17 +37,23 @@ fn ensureDir dirPath =
 fn collectMaxFilesRecursive rootPath =
 (
     local found = #()
+    if (doesDirectoryExist rootPath) == false then return found
 
-    fn walk dir acc =
+    local dirQueue = #(rootPath)
+    local idx = 1
+
+    while idx <= dirQueue.count do
     (
+        local dir = dirQueue[idx]
+        idx += 1
+
         local maxFiles = getFiles (dir + "\\*.max")
-        for f in maxFiles do append acc f
+        for f in maxFiles do append found f
 
         local subDirs = getDirectories (dir + "\\*")
-        for d in subDirs do walk d acc
+        for d in subDirs do append dirQueue d
     )
 
-    if doesDirectoryExist rootPath then walk rootPath found
     found
 )
 
@@ -193,21 +199,34 @@ fn collectSinkRootNodes =
     roots
 )
 
+fn isProtectedNode node =
+(
+    if node == undefined then return false
+    nodeNameStartsWithAny node.name #("CB", "DR")
+)
+
 fn assignMaterialRecursive node newMat stats =
 (
     if node == undefined or newMat == undefined then return false
 
     local assigned = true
-    try
+    if isProtectedNode node then
     (
-        node.material = newMat
-        stats[1] += 1
+        stats[3] += 1
     )
-    catch
+    else
     (
-        assigned = false
-        stats[2] += 1
-        logWarn ("Failed material assignment on node: " + node.name)
+        try
+        (
+            node.material = newMat
+            stats[1] += 1
+        )
+        catch
+        (
+            assigned = false
+            stats[2] += 1
+            logWarn ("Failed material assignment on node: " + node.name)
+        )
     )
 
     for c in node.children do assignMaterialRecursive c newMat stats
@@ -277,7 +296,7 @@ fn processMaxFile filePath matLib =
             return result
         )
 
-        local stats = #(0, 0) -- #(assignedCount, assignmentErrors)
+        local stats = #(0, 0, 0) -- #(assignedCount, assignmentErrors, protectedSkippedCount)
         for r in roots do assignMaterialRecursive r replacementMat stats
 
         local saved = saveMaxFile filePath quiet:true
@@ -292,7 +311,7 @@ fn processMaxFile filePath matLib =
         result[1] = "success"
         result[2] = stats[1]
         result[3] = stats[2]
-        result[4] = "Token=" + finishToken + ", Material=" + matName + ", Roots=" + (roots.count as string)
+        result[4] = "Token=" + finishToken + ", Material=" + matName + ", Roots=" + (roots.count as string) + ", ProtectedSkipped=" + (stats[3] as string)
 
         resetMaxFile #noPrompt
         result
