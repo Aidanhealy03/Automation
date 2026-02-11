@@ -285,59 +285,71 @@ fn ensureBoxUvwOnNode node boxSize stats label =
     if node == undefined then return false
 
     local handled = true
-    try
+    if isProtectedNode node then
     (
-        local uvMod = undefined
-        if isProperty node #modifiers then
-        (
-            for m in node.modifiers where (classOf m == UVWMap) do
-            (
-                uvMod = m
-                exit
-            )
-
-            if uvMod == undefined then
-            (
-                uvMod = UVWMap()
-                addModifier node uvMod
-            )
-
-            uvMod.maptype = 4 -- Box
-            uvMod.length = boxSize
-            uvMod.width = boxSize
-            uvMod.height = boxSize
-            stats[1] += 1
-        )
-        else
-        (
-            stats[3] += 1
-        )
+        stats[3] += 1
     )
-    catch
+    else
     (
-        handled = false
-        stats[2] += 1
-        logWarn ("Failed UVW Box setup on " + label + " node: " + node.name)
+        try
+        (
+            local uvMod = undefined
+            if isProperty node #modifiers then
+            (
+                for m in node.modifiers where (classOf m == UVWMap) do
+                (
+                    uvMod = m
+                    exit
+                )
+
+                if uvMod == undefined then
+                (
+                    uvMod = UVWMap()
+                    addModifier node uvMod
+                )
+
+                uvMod.maptype = 4 -- Box
+                uvMod.length = boxSize
+                uvMod.width = boxSize
+                uvMod.height = boxSize
+                stats[1] += 1
+            )
+            else
+            (
+                stats[3] += 1
+            )
+        )
+        catch
+        (
+            handled = false
+            stats[2] += 1
+            logWarn ("Failed UVW Box setup on " + label + " node: " + node.name)
+        )
     )
 
     for c in node.children do ensureBoxUvwOnNode c boxSize stats label
     handled
 )
 
-fn applyDrainAndColanderUvw =
+fn applyQuartzUvw sinkPrefix =
 (
+    local sinkRoots = collectRootNodesByPrefix #(sinkPrefix)
     local colRoots = collectRootNodesByPrefix #("COL")
     local drainRoots = collectRootNodesByPrefix #("QBS")
 
-    local colStats = #(0, 0, 0) -- #(updated, errors, skippedNoModifiers)
+    local sinkStats = #(0, 0, 0) -- #(updated, errors, skipped)
+    local colStats = #(0, 0, 0)
     local drainStats = #(0, 0, 0)
 
-    for n in colRoots do ensureBoxUvwOnNode n 6.0 colStats "colander"
-    for n in drainRoots do ensureBoxUvwOnNode n 4.0 drainStats "drain"
+    for n in sinkRoots do ensureBoxUvwOnNode n 12.0 sinkStats "sink"
+    for n in colRoots do ensureBoxUvwOnNode n 8.0 colStats "colander"
+    for n in drainRoots do ensureBoxUvwOnNode n 6.0 drainStats "drain"
 
     #(
+        sinkRoots.count,
         colRoots.count,
         drainRoots.count,
+        sinkStats,
         colStats,
         drainStats
     )
@@ -417,11 +429,13 @@ fn processMaxFile filePath matLib =
         local stats = #(0, 0, 0) -- #(assignedCount, assignmentErrors, protectedSkippedCount)
         for r in roots do assignMaterialRecursive r replacementMat stats
 
-        local uvwData = applyDrainAndColanderUvw()
-        local colRootCount = uvwData[1]
-        local drainRootCount = uvwData[2]
-        local colStats = uvwData[3]
-        local drainStats = uvwData[4]
+        local uvwData = applyQuartzUvw sinkPrefix
+        local sinkRootCount = uvwData[1]
+        local colRootCount = uvwData[2]
+        local drainRootCount = uvwData[3]
+        local sinkStats = uvwData[4]
+        local colStats = uvwData[5]
+        local drainStats = uvwData[6]
 
         local saved = saveMaxFile filePath quiet:true
         if not saved then
@@ -436,8 +450,10 @@ fn processMaxFile filePath matLib =
         result[2] = stats[1]
         result[3] = stats[2]
         local uvSummary =
+            ", SinkRoots=" + (sinkRootCount as string) +
             ", ColRoots=" + (colRootCount as string) +
             ", DrainRoots=" + (drainRootCount as string) +
+            ", SinkUVW=" + (sinkStats[1] as string) + "/Err=" + (sinkStats[2] as string) + "/Skip=" + (sinkStats[3] as string) +
             ", ColUVW=" + (colStats[1] as string) + "/Err=" + (colStats[2] as string) + "/Skip=" + (colStats[3] as string) +
             ", DrainUVW=" + (drainStats[1] as string) + "/Err=" + (drainStats[2] as string) + "/Skip=" + (drainStats[3] as string)
         result[4] = "SinkPrefix=" + sinkPrefix + ", Token=" + finishToken + ", Material=" + matName + ", Roots=" + (roots.count as string) + ", ProtectedSkipped=" + (stats[3] as string) + uvSummary
