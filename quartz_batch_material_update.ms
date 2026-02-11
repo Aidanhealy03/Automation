@@ -226,7 +226,29 @@ fn collectSinkRootNodes sinkPrefix =
 fn isProtectedNode node =
 (
     if node == undefined then return false
-    nodeNameStartsWithAny node.name #("CB", "DR")
+
+    local nodeNameUpper = toUpper node.name
+    if nodeNameStartsWithAny node.name #("CB", "DR") then return true
+    if nodeNameUpper == "DR1713" then return true
+    if matchPattern nodeNameUpper pattern:"*SILICONE_MAT_DETAIL*" then return true
+
+    false
+)
+
+fn hasProtectedAncestor node =
+(
+    local p = node.parent
+    while p != undefined do
+    (
+        if isProtectedNode p then return true
+        p = p.parent
+    )
+    false
+)
+
+fn shouldSkipNodeChanges node =
+(
+    isProtectedNode node or hasProtectedAncestor node
 )
 
 fn assignMaterialRecursive node newMat stats =
@@ -234,7 +256,7 @@ fn assignMaterialRecursive node newMat stats =
     if node == undefined or newMat == undefined then return false
 
     local assigned = true
-    if isProtectedNode node then
+    if shouldSkipNodeChanges node then
     (
         stats[3] += 1
     )
@@ -285,7 +307,7 @@ fn ensureBoxUvwOnNode node boxSize stats label =
     if node == undefined then return false
 
     local handled = true
-    if isProtectedNode node then
+    if shouldSkipNodeChanges node then
     (
         stats[3] += 1
     )
@@ -342,8 +364,8 @@ fn applyQuartzUvw sinkPrefix =
     local drainStats = #(0, 0, 0)
 
     for n in sinkRoots do ensureBoxUvwOnNode n 12.0 sinkStats "sink"
-    for n in colRoots do ensureBoxUvwOnNode n 8.0 colStats "colander"
-    for n in drainRoots do ensureBoxUvwOnNode n 6.0 drainStats "drain"
+    for n in colRoots do ensureBoxUvwOnNode n 10.0 colStats "colander"
+    for n in drainRoots do ensureBoxUvwOnNode n 8.0 drainStats "drain"
 
     #(
         sinkRoots.count,
