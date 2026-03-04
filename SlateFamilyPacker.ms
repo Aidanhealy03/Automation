@@ -529,7 +529,7 @@ fn sfpo_layoutCardNodes rootNode familyNodes frameLeft frameTop frameWidth frame
             local ni = laneIdx[li]
             local tY = frameTop + framePadding + 110 + (li - 1) * 18
 
-            if d == 0 do
+            if d == 0 then
             (
                 if ni == rootIdx then tY = frameTop + framePadding + 170
             )
