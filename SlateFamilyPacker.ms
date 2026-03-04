@@ -162,6 +162,57 @@ fn sfp_findNodeIndexByRef nodeRefs targetRef =
     0
 )
 
+fn sfp_sortStringArrayInPlace arr =
+(
+    -- Avoid qsort with inline comparator closures (can fail in some Max versions).
+    if arr == undefined then return arr
+    local ct = arr.count
+    if ct < 2 then return arr
+
+    for i = 1 to (ct - 1) do
+    (
+        for j = (i + 1) to ct do
+        (
+            if (arr[j] as string) < (arr[i] as string) do
+            (
+                local t = arr[i]
+                arr[i] = arr[j]
+                arr[j] = t
+            )
+        )
+    )
+    arr
+)
+
+fn sfp_sortIndicesByNodePosition idxArray familyNodes =
+(
+    -- Deterministic top-left ordering without closure comparators.
+    if idxArray == undefined then return idxArray
+    local ct = idxArray.count
+    if ct < 2 then return idxArray
+
+    for i = 1 to (ct - 1) do
+    (
+        for j = (i + 1) to ct do
+        (
+            local pi = sfp_getNodePos familyNodes[idxArray[i]]
+            local pj = sfp_getNodePos familyNodes[idxArray[j]]
+
+            local swapNeeded = false
+            if pj.y < pi.y then swapNeeded = true
+            else if (pj.y == pi.y and pj.x < pi.x) then swapNeeded = true
+
+            if swapNeeded do
+            (
+                local t = idxArray[i]
+                idxArray[i] = idxArray[j]
+                idxArray[j] = t
+            )
+        )
+    )
+    idxArray
+)
+
 fn sfp_getRelatedRefs refObj =
 (
     -- Build a conservative relation list from both dependsOn and dependents.
@@ -325,7 +376,7 @@ fn sfp_getFamilyDisplayName familyNodes =
 
     if candidateNames.count > 0 do
     (
-        qsort candidateNames (fn a b = a < b)
+        sfp_sortStringArrayInPlace candidateNames
         return candidateNames[1]
     )
 
@@ -333,7 +384,7 @@ fn sfp_getFamilyDisplayName familyNodes =
     local nodeNames = for n in familyNodes collect (sfp_getNodeSafeName n)
     if nodeNames.count > 0 do
     (
-        qsort nodeNames (fn a b = a < b)
+        sfp_sortStringArrayInPlace nodeNames
         return nodeNames[1]
     )
 
@@ -360,13 +411,7 @@ fn sfp_lightCleanupFamily familyNodes snapSpacing:24 overlapPadding:24 =
 
     -- Step 2: small overlap pass, deterministic by current top-left order
     local idx = for i = 1 to familyNodes.count collect i
-    qsort idx (fn a b =
-        (
-            local pa = sfp_getNodePos familyNodes[a]
-            local pb = sfp_getNodePos familyNodes[b]
-            if pa.y == pb.y then pa.x < pb.x else pa.y < pb.y
-        )
-    )
+    sfp_sortIndicesByNodePosition idx familyNodes
 
     for ia = 1 to idx.count do
     (
