@@ -800,10 +800,19 @@ fn sfpo_buildLayout \
             if (pj and not pi) then swapNeeded = true
             if (not swapNeeded) and (pi == pj) do
             (
-                if (toLower cj.section) < (toLower ci.section) do swapNeeded = true
-                else if (toLower cj.section) == (toLower ci.section) do
+                local secJ = toLower cj.section
+                local secI = toLower ci.section
+
+                if secJ < secI then
                 (
-                    if (toLower cj.name) < (toLower ci.name) do swapNeeded = true
+                    swapNeeded = true
+                )
+                else
+                (
+                    if secJ == secI do
+                    (
+                        if (toLower cj.name) < (toLower ci.name) do swapNeeded = true
+                    )
                 )
             )
 
