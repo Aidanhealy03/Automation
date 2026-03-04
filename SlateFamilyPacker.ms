@@ -407,12 +407,11 @@ fn sfpo_sortNodesByRoleAndName nodeArr =
     nodeArr
 )
 
-fn sfpo_getConnectedFamilyFromRoot rootNode allNodes allRefs =
+fn sfpo_getUpstreamFamilyFromRoot rootNode allNodes allRefs =
 (
-    -- Undirected connectivity for family membership (robust), then directed depths for relayout.
+    -- Directed upstream family: keeps maps close to the chosen root material and avoids cross-root pull.
     local fam = #()
-    local q = #()
-    append q rootNode
+    local q = #(rootNode)
 
     while q.count > 0 do
     (
@@ -423,18 +422,19 @@ fn sfpo_getConnectedFamilyFromRoot rootNode allNodes allRefs =
 
         local r = sfpo_getNodeRef n
         if r == undefined then continue
-        local rel = sfpo_relatedRefs r
 
-        for rr in rel do
+        local inputRefs = sfpo_getInputRefsFromSubAnims r allRefs
+        for ir in inputRefs do
         (
-            local idx = sfpo_nodeIndexByRef allRefs rr
+            local idx = sfpo_nodeIndexByRef allRefs ir
             if idx > 0 do
             (
-                local nn = allNodes[idx]
-                if (findItem fam nn) == 0 and (findItem q nn) == 0 do append q nn
+                local upstreamNode = allNodes[idx]
+                if (findItem fam upstreamNode) == 0 and (findItem q upstreamNode) == 0 do append q upstreamNode
             )
         )
     )
+
     fam
 )
 
@@ -689,18 +689,25 @@ fn sfpo_buildLayout \
     )
 
     -- spacing presets
-    local laneGap = 260
-    local rowGap = 36
-    local framePad = 50
-    local cardW = 1300
-    local cardHMin = 380
-    local cardGapX = 220
-    local cardGapY = 190
+    local laneGap = 180
+    local rowGap = 26
+    local framePad = 34
+    local cardW = 980
+    local cardHMin = 300
+    local cardGapX = 110
+    local cardGapY = 120
+    local maxCols = 3
     case spacingPreset of
     (
-        1: (laneGap = 220; rowGap = 24; framePad = 36; cardW = 1100; cardGapX = 170; cardGapY = 140)
-        2: (laneGap = 260; rowGap = 36; framePad = 50; cardW = 1300; cardGapX = 220; cardGapY = 190)
-        3: (laneGap = 320; rowGap = 52; framePad = 64; cardW = 1500; cardGapX = 280; cardGapY = 240)
+        1: (laneGap = 160; rowGap = 20; framePad = 28; cardW = 860; cardGapX = 90;  cardGapY = 96;  maxCols = 4)
+        2: (laneGap = 180; rowGap = 26; framePad = 34; cardW = 980; cardGapX = 110; cardGapY = 120; maxCols = 3)
+        3: (laneGap = 210; rowGap = 34; framePad = 42; cardW = 1120; cardGapX = 140; cardGapY = 150; maxCols = 2)
+    )
+
+    if layoutDir == 2 do
+    (
+        -- Top->Bottom mode: force one card per row for vertical browsing.
+        maxCols = 1
     )
 
     local cards = #()
@@ -708,7 +715,7 @@ fn sfpo_buildLayout \
 
     for root in rootMaterials do
     (
-        local famNodes = sfpo_getConnectedFamilyFromRoot root nodes refs
+        local famNodes = sfpo_getUpstreamFamilyFromRoot root nodes refs
         local famRefs = for fnn in famNodes collect (sfpo_getNodeRef fnn)
 
         local rootRef = sfpo_getNodeRef root
@@ -856,33 +863,36 @@ fn sfpo_buildLayout \
     (
         sfpo_tryCreateSectionHeader v ("[SECTION] " + sn) [sectionStartX, yCursor - 80]
 
-        local x = sectionStartX
+        local sectionCards = for c in cards where c.section == sn collect c
+        local col = 0
+        local rowBaseY = yCursor
         local rowMaxH = 0
 
-        for c in cards where c.section == sn do
+        for c in sectionCards do
         (
+            local x = sectionStartX + (col * (cardW + cardGapX))
+
             -- deterministic card internal relayout
-            local b = sfpo_layoutCardNodes c.rootNode c.nodes x yCursor cardW framePad laneGap rowGap
+            local b = sfpo_layoutCardNodes c.rootNode c.nodes x rowBaseY cardW framePad laneGap rowGap
             c.bounds = b
 
             local cardH = amax cardHMin b[4]
             rowMaxH = amax rowMaxH cardH
 
             -- index entry note (best-effort)
-            sfpo_tryCreateSectionHeader v ("• " + c.name) [indexX, yCursor]
+            sfpo_tryCreateSectionHeader v ("• " + c.name) [indexX, rowBaseY]
 
-            if layoutDir == 1 then
+            col += 1
+            if col >= maxCols do
             (
-                x += (cardW + cardGapX)
-            )
-            else
-            (
-                yCursor += (cardH + cardGapY)
+                col = 0
+                rowBaseY += (rowMaxH + cardGapY)
+                rowMaxH = 0
             )
         )
 
-        if layoutDir == 1 then yCursor += (rowMaxH + cardGapY)
-        yCursor += 120
+        if col > 0 do rowBaseY += (rowMaxH + cardGapY)
+        yCursor = rowBaseY + 120
     )
 
     -- Shared maps area
