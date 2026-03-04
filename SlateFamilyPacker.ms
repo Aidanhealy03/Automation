@@ -490,33 +490,132 @@ fn sfpo_layoutCardNodes rootNode familyNodes frameLeft frameTop frameWidth frame
     local depthData = sfpo_buildDepths rootNode familyNodes
     local nodesArr = depthData[1]
     local depths = depthData[2]
+    local nodeRefs = for n in nodesArr collect (sfpo_getNodeRef n)
 
     local maxDepth = 0
     for d in depths do if d > maxDepth do maxDepth = d
 
     local rootX = frameLeft + frameWidth - framePadding - 220
-    local startY = frameTop + framePadding + 36
+    local rootIdx = findItem nodesArr rootNode
+    if rootIdx == 0 then rootIdx = 1
 
-    -- Place depth lanes left -> right toward root (depth 0 at right).
+    -- Build downstream consumer links: for each input node, which node(s) consume it.
+    local consumers = for i=1 to nodesArr.count collect #()
+    for ci=1 to nodesArr.count do
+    (
+        local cref = nodeRefs[ci]
+        if cref == undefined then continue
+
+        local inputRefs = sfpo_getInputRefsFromSubAnims cref nodeRefs
+        for ir in inputRefs do
+        (
+            local ii = sfpo_nodeIndexByRef nodeRefs ir
+            if ii > 0 and (findItem consumers[ii] ci) == 0 do append consumers[ii] ci
+        )
+    )
+
+    local placedY = for i=1 to nodesArr.count collect (frameTop + framePadding + 90)
+
+    -- Place depth lanes left -> right toward root (depth 0 near right).
     for d = 0 to maxDepth do
     (
-        local laneNodes = #()
-        for i=1 to nodesArr.count do if depths[i] == d do append laneNodes nodesArr[i]
-        sfpo_sortNodesByRoleAndName laneNodes
+        local laneIdx = #()
+        for i=1 to nodesArr.count do if depths[i] == d do append laneIdx i
+
+        -- Compute target Y for this lane from consumer positions (keeps branches close to parents).
+        local targetY = #()
+        for li=1 to laneIdx.count do
+        (
+            local ni = laneIdx[li]
+            local tY = frameTop + framePadding + 110 + (li - 1) * 18
+
+            if d == 0 do
+            (
+                if ni == rootIdx then tY = frameTop + framePadding + 170
+            )
+            else
+            (
+                local cList = consumers[ni]
+                if cList.count > 0 then
+                (
+                    local sumY = 0.0
+                    for ci in cList do sumY += placedY[ci]
+                    tY = sumY / cList.count
+                )
+                else
+                (
+                    tY = (sfpo_getNodePos nodesArr[ni]).y
+                )
+            )
+
+            append targetY tY
+        )
+
+        -- Sort lane by targetY, then role, then name for deterministic and tidy branching.
+        for a=1 to (laneIdx.count-1) do
+        (
+            for b=(a+1) to laneIdx.count do
+            (
+                local ia = laneIdx[a]
+                local ib = laneIdx[b]
+                local swapNeeded = false
+
+                if targetY[b] < targetY[a] then
+                (
+                    swapNeeded = true
+                )
+                else
+                (
+                    if targetY[b] == targetY[a] do
+                    (
+                        local ra = sfpo_roleScore nodesArr[ia]
+                        local rb = sfpo_roleScore nodesArr[ib]
+                        if rb < ra then
+                        (
+                            swapNeeded = true
+                        )
+                        else
+                        (
+                            if rb == ra do
+                            (
+                                local na = toLower (sfpo_getNodeName nodesArr[ia])
+                                local nb = toLower (sfpo_getNodeName nodesArr[ib])
+                                if nb < na do swapNeeded = true
+                            )
+                        )
+                    )
+                )
+
+                if swapNeeded do
+                (
+                    local ti = laneIdx[a]; laneIdx[a] = laneIdx[b]; laneIdx[b] = ti
+                    local ty = targetY[a]; targetY[a] = targetY[b]; targetY[b] = ty
+                )
+            )
+        )
 
         local laneX = rootX - (d * laneGap)
-        local y = startY
+        local cursorY = frameTop + framePadding + 20
 
-        for n in laneNodes do
+        for li=1 to laneIdx.count do
         (
-            sfpo_setNodePos n [laneX, y]
-            local sz = sfpo_getNodeSize n
-            y += (sz.y + rowGap)
+            local ni = laneIdx[li]
+            local nodeObj = nodesArr[ni]
+            local sz = sfpo_getNodeSize nodeObj
+            local desiredY = targetY[li]
+
+            if desiredY < cursorY then desiredY = cursorY
+
+            sfpo_setNodePos nodeObj [laneX, desiredY]
+            placedY[ni] = desiredY
+
+            cursorY = desiredY + sz.y + rowGap
         )
     )
 
     sfpo_boundsFromNodes familyNodes
 )
+
 
 -- ============================================================
 -- Categorization / sectioning
