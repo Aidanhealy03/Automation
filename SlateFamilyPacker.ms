@@ -474,6 +474,28 @@ fn sfp_sortFamilyData famDataA famDataB =
     a < b
 )
 
+
+fn sfp_sortFamilyDataArrayInPlace famArray =
+(
+    if famArray == undefined then return famArray
+    local ct = famArray.count
+    if ct < 2 then return famArray
+
+    for i = 1 to (ct - 1) do
+    (
+        for j = (i + 1) to ct do
+        (
+            if sfp_sortFamilyData famArray[j] famArray[i] do
+            (
+                local t = famArray[i]
+                famArray[i] = famArray[j]
+                famArray[j] = t
+            )
+        )
+    )
+    famArray
+)
+
 fn sfp_packFamilies familyDataArray settings =
 (
     -- settings fields:
@@ -594,7 +616,7 @@ fn sfp_organizeSlateFamilies \
     local sortedData = #()
     for fd in familyData do append sortedData (SFPFamilyData nodes:fd["nodes"] bounds:fd["bounds"] displayName:fd["displayName"])
 
-    qsort sortedData sfp_sortFamilyData
+    sfp_sortFamilyDataArrayInPlace sortedData
 
     local settings = dotNetObject "System.Collections.Hashtable"
     settings["hGap"] = familyHGap
