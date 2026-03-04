@@ -109,14 +109,31 @@ fn sfp_collectAllViewNodes nodeView =
     if nodeView == undefined then return outNodes
 
     local ct = 0
-    try (ct = nodeView.numNodes) catch (ct = 0)
+    try (ct = nodeView.numNodes) catch()
+    if ct == 0 do try (ct = nodeView.GetNumNodes()) catch()
 
-    for i = 1 to ct do
+    -- First try 1-based indexing (common in MaxScript wrappers)
+    if ct > 0 do
     (
-        local n = undefined
-        try (n = nodeView.GetNode i) catch (n = undefined)
-        if n != undefined do append outNodes n
+        for i = 1 to ct do
+        (
+            local n = undefined
+            try (n = nodeView.GetNode i) catch (n = undefined)
+            if n != undefined and (findItem outNodes n) == 0 do append outNodes n
+        )
+
+        -- Fallback: some interfaces may be 0-based
+        if outNodes.count == 0 do
+        (
+            for i = 0 to (ct - 1) do
+            (
+                local n = undefined
+                try (n = nodeView.GetNode i) catch (n = undefined)
+                if n != undefined and (findItem outNodes n) == 0 do append outNodes n
+            )
+        )
     )
+
     outNodes
 )
 
@@ -594,8 +611,10 @@ fn sfp_organizeSlateFamilies \
         return false
     )
 
-    -- Prepare mutable data records for each family
-    local familyData = #()
+    -- Prepare family records (pure MaxScript structs, avoids dotNet hashtable set/get compatibility issues)
+    struct SFPFamilyData (nodes, bounds, displayName)
+    local sortedData = #()
+
     for fam in families do
     (
         if (not preserveInternal) do sfp_normalizeFamilyOrigin fam targetOrigin:[0,0]
@@ -603,38 +622,15 @@ fn sfp_organizeSlateFamilies \
 
         local b = sfp_getFamilyBounds fam
         local nm = sfp_getFamilyDisplayName fam
-
-        append familyData (dotNetObject "System.Collections.Hashtable")
-        local fd = familyData[familyData.count]
-        fd["nodes"] = fam
-        fd["bounds"] = b
-        fd["displayName"] = nm
+        append sortedData (SFPFamilyData nodes:fam bounds:b displayName:nm)
     )
-
-    -- Convert hashtable records to simple struct-like wrappers for cleaner sort/pack
-    struct SFPFamilyData (nodes, bounds, displayName)
-    local sortedData = #()
-    for fd in familyData do append sortedData (SFPFamilyData nodes:fd["nodes"] bounds:fd["bounds"] displayName:fd["displayName"])
 
     sfp_sortFamilyDataArrayInPlace sortedData
 
-    local settings = dotNetObject "System.Collections.Hashtable"
-    settings["hGap"] = familyHGap
-    settings["vGap"] = familyVGap
-    settings["margin"] = outerMargin
-    settings["maxRowWidth"] = amax 800 maxRowWidth
-    settings["colCount"] = amax 0 colCount
-
-    -- Adapter struct to read hashtable values conveniently
     struct SFPSettings (hGap, vGap, margin, maxRowWidth, colCount)
-    local s = SFPSettings \
-        hGap:settings["hGap"] \
-        vGap:settings["vGap"] \
-        margin:settings["margin"] \
-        maxRowWidth:settings["maxRowWidth"] \
-        colCount:settings["colCount"]
+    local settings = SFPSettings hGap:familyHGap vGap:familyVGap margin:outerMargin maxRowWidth:(amax 800 maxRowWidth) colCount:(amax 0 colCount)
 
-    sfp_packFamilies sortedData s
+    sfp_packFamilies sortedData settings
 
     if zoomAfter do sfp_zoomExtentsSafe nodeView
 
