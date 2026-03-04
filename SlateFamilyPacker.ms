@@ -449,12 +449,12 @@ fn sfp_normalizeFamilyOrigin familyNodes targetOrigin:[0,0] =
 (
     local b = sfp_getFamilyBounds familyNodes
     local minPt = b[1]
-    local off = [targetOrigin.x - minPt.x, targetOrigin.y - minPt.y]
+    local offsetVec = [targetOrigin.x - minPt.x, targetOrigin.y - minPt.y]
 
     for n in familyNodes do
     (
         local p = sfp_getNodePos n
-        sfp_setNodePos n [p.x + off.x, p.y + off.y]
+        sfp_setNodePos n [p.x + offsetVec.x, p.y + offsetVec.y]
     )
 )
 
@@ -530,8 +530,8 @@ fn sfp_packFamilies familyDataArray settings =
         )
 
         local curMin = fd.bounds[1]
-        local off = [x - curMin.x, y - curMin.y]
-        sfp_moveFamily fd.nodes offset:off
+        local packOffset = [x - curMin.x, y - curMin.y]
+        sfp_moveFamily fd.nodes offset:packOffset
 
         -- Update current row cursor
         x += (fw + settings.hGap)
